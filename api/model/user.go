@@ -5,13 +5,13 @@ import (
 )
 
 type User struct {
-	Id          string `gorethink:"id,omitempty"`
-	Dateofbirth time.Time
-	Email       string
-	Phone       string
-  Password    string
-	Created     time.Time
-	Updated     time.Time
+	Id          string `gorethink:"id,omitempty" json:"id,"`
+	Dateofbirth time.Time `json:"dob,omitempty"`
+	Email       string `json:"email,omitempty"`
+	Phone       string `json:"phone,omitempty"`
+  Password    string `json:"-"`
+	Created     time.Time `json:"created,omitempty"`
+	Updated     time.Time `json:"updated,omitempty"`
 }
 
 /*
