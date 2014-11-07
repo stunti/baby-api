@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
+	"github.com/stunti/baby-api/api/acl"
 	"github.com/stunti/baby-api/api/global"
 	"github.com/stunti/baby-api/api/handler"
 
@@ -18,6 +20,8 @@ import (
 	"github.com/phyber/negroni-gzip/gzip"
 )
 
+var restrictedRouter *mux.Router
+
 func init() {
 	var err error
 	var tmp_sess *r.Session
@@ -28,6 +32,7 @@ func init() {
 
 	global.PrivateKey, _ = ioutil.ReadFile(dir + "/keys/app.rsa")
 	global.PublicKey, _ = ioutil.ReadFile(dir + "/keys/app.rsa.pub")
+
 	tmp_sess, err = r.Connect(r.ConnectOpts{
 		Address: os.Getenv("HOST_IP") + ":28015",
 	})
@@ -48,35 +53,46 @@ func init() {
 
 func AuthMiddleware() negroni.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		token, err := jwt.ParseFromRequest(r, func(token *jwt.Token) (interface{}, error) {
-			return global.PublicKey, nil
-		})
-		if err == nil && token.Valid {
-			context.Set(r, "tokenUserId", token.Claims["user"])
+
+		//get status of matched route
+		status := acl.GetAclStatus(r, restrictedRouter)
+		log.Println("route status: " + strconv.Itoa(status))
+		if status == acl.Open {
 			next(w, r)
 		} else {
-			w.WriteHeader(http.StatusUnauthorized)
-			fmt.Fprint(w, "GO HOME SON")
+
+			token, err := jwt.ParseFromRequest(r, func(token *jwt.Token) (interface{}, error) {
+				return global.PublicKey, nil
+			})
+			if err == nil && token.Valid {
+				log.Println("user status: ", strconv.Itoa(int(token.Claims["role"].(float64))))
+				//grab the role from token
+				if (int(token.Claims["role"].(float64)) & status) != 0 {
+					context.Set(r, "tokenUserId", token.Claims["user"])
+					next(w, r)
+				} else {
+					w.WriteHeader(http.StatusUnauthorized)
+					fmt.Fprint(w, "GO HOME SON you need ", status)
+				}
+			} else {
+				w.WriteHeader(http.StatusUnauthorized)
+				fmt.Fprint(w, "GO HOME SON")
+			}
 		}
 	}
 }
 
 func main() {
-	restrictedRouter := mux.NewRouter()
-	openRouter := mux.NewRouter()
+	restrictedRouter = mux.NewRouter()
+
+	restrictedRouter.HandleFunc("/v1/user/profile", handler.UserProfileHandler).Name("V1UserProfile")
+	restrictedRouter.HandleFunc("/v1/user/login", handler.UserLoginHandler).Name("V1UserLogin")
+
 	n := negroni.Classic()
-
-	//restricted api access
-	restrictedRouter.HandleFunc("/user/profile", handler.UserProfileHandler)
-	secure := negroni.New()
-	secure.Use(AuthMiddleware())
-	secure.UseHandler(restrictedRouter)
-
-	openRouter.HandleFunc("/open/login", handler.UserLoginHandler)
-
-	openRouter.Handle("/user/profile", secure)
-
+	n.Use(AuthMiddleware())
 	n.Use(gzip.Gzip(gzip.DefaultCompression))
-	n.UseHandler(openRouter)
-	http.ListenAndServe(":8180", n)
+	n.UseHandler(restrictedRouter)
+
+	//lets save the handler for use in AuthMiddleware
+	n.Run(":8180")
 }
