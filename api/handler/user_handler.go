@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/stunti/baby-api/api/global"
+	"github.com/stunti/baby-api/api/acl"
 	"github.com/stunti/baby-api/api/model"
 
 	"crypto/sha256"
@@ -48,6 +49,7 @@ func UserLoginHandler(w http.ResponseWriter, req *http.Request) {
 	token := jwt.New(jwt.GetSigningMethod("RS256"))
 	token.Claims["api"] = req.FormValue("api")
 	token.Claims["user"] = user.Id
+	token.Claims["role"] = acl.User
 	token.Claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
 	tokenString, _ := token.SignedString(global.PrivateKey)
 
